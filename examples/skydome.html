@@ -6,15 +6,48 @@
     <meta name="viewport" content="width=device-width, minimal-ui, viewport-fit=cover, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
     <link rel="icon" type="image/png" href="assets/favicon.png">
 
-    <title>O-GL • Skydome</title>
+    <title>OGL • Skydome</title>
     <link href="assets/main.css" rel="stylesheet">
 </head>
 <body>
     <div class="Info">Skydome. Image credit <a href="https://www.flickr.com/photos/charlesashaw/6264765128" target="_blank">charlesashaw</a>.</div>
     <script type="module">
-        import {Renderer, Geometry, Program, Mesh, Camera, Transform, Texture} from '../src/Core.js';
-        import {Sphere, Orbit} from '../src/Extras.js';
-        import SkydomeShader from './shaders/SkydomeShader.js';
+        import {Renderer, Geometry, Program, Mesh, Camera, Transform, Texture, Sphere, Orbit} from '../src/index.mjs';
+        
+        const vertex = /* glsl */ `
+            precision highp float;
+            precision highp int;
+
+            attribute vec2 uv;
+            attribute vec3 position;
+            attribute vec3 normal;
+
+            uniform mat4 modelViewMatrix;
+            uniform mat4 projectionMatrix;
+
+            varying vec2 vUv;
+
+            void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `;
+
+        const fragment = /* glsl */ `
+            precision highp float;
+            precision highp int;
+
+            uniform sampler2D tMap;
+
+            varying vec2 vUv;
+
+            void main() {
+                vec3 tex = texture2D(tMap, vUv).rgb;
+                
+                gl_FragColor.rgb = tex;
+                gl_FragColor.a = 1.0;
+            }
+        `;
 
         {
             const renderer = new Renderer({dpr: 2});
@@ -49,8 +82,8 @@
             const geometry = new Sphere(gl, {radius: 1, widthSegments: 64});
 
             const program = new Program(gl, {
-                vertex: SkydomeShader.vertex,
-                fragment: SkydomeShader.fragment,
+                vertex,
+                fragment,
                 uniforms: {
                     tMap: {value: texture},
                 },

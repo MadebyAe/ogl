@@ -1,12 +1,15 @@
 {
     "name": "ogl",
-    "version": "0.0.17",
-    "description": "WebGL Framework",
-    "main": "src",
+    "version": "0.0.43",
+    "description": "WebGL Library",
+    "main": "src/index.mjs",
+    "sideEffects": false,
     "directories": {
         "example": "examples"
     },
     "scripts": {
+        "build": "rollup -c",
+        "prepublish": "npm run build",
         "test": "echo \"Error: no test specified\" && exit 1"
     },
     "repository": {
@@ -19,13 +22,14 @@
     "author": {
         "name": "Nathan Gordon",
         "email": "gordonnl@gmail.com",
-        "url": "https://cinemont.com"
+        "url": "https://twitter.com/gordonnl"
     },
     "license": "MIT",
     "bugs": {
         "url": "https://github.com/oframe/ogl/issues"
     },
-    "dependencies": {
+    "devDependencies": {
+        "rollup": "^1.27.13"
     },
     "homepage": "https://github.com/oframe/ogl#readme"
 }

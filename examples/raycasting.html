@@ -6,15 +6,49 @@
     <meta name="viewport" content="width=device-width, minimal-ui, viewport-fit=cover, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
     <link rel="icon" type="image/png" href="assets/favicon.png">
 
-    <title>O-GL • Projection and Raycasting</title>
+    <title>OGL • Projection and Raycasting</title>
     <link href="assets/main.css" rel="stylesheet">
 </head>
 <body>
     <div class="Info">Projection and Raycasting</div>
     <script type="module">
-        import {Renderer, Camera, Transform, Program, Mesh, Vec2} from '../src/Core.js';
-        import {Plane, Sphere, Box, Orbit, Raycast} from '../src/Extras.js';
-        import RaycastingShader from './shaders/RaycastingShader.js';
+        import {Renderer, Camera, Transform, Program, Mesh, Vec2, Plane, Sphere, Box, Orbit, Raycast} from '../src/index.mjs';
+        
+        const vertex = /* glsl */ `
+            precision highp float;
+            precision highp int;
+
+            attribute vec3 position;
+            attribute vec3 normal;
+
+            uniform mat4 modelViewMatrix;
+            uniform mat4 projectionMatrix;
+            uniform mat3 normalMatrix;
+
+            varying vec3 vNormal;
+
+            void main() {
+                vNormal = normalize(normalMatrix * normal);
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `;
+
+        const fragment = /* glsl */ `
+            precision highp float;
+            precision highp int;
+
+            uniform float uHit;
+
+            varying vec3 vNormal;
+
+            void main() {
+                vec3 normal = normalize(vNormal);
+                float lighting = dot(normal, normalize(vec3(-0.3, 0.8, 0.6)));
+                vec3 color = mix(vec3(0.2, 0.8, 1.0), vec3(1.0, 0.2, 0.8), uHit);
+                gl_FragColor.rgb = color + lighting * 0.1;
+                gl_FragColor.a = 1.0;
+            }
+        `;
 
         {
             const renderer = new Renderer({dpr: 2});
@@ -41,8 +75,8 @@
             const cubeGeometry = new Box(gl);
 
             const program = new Program(gl, {
-                vertex: RaycastingShader.vertex,
-                fragment: RaycastingShader.fragment,
+                vertex,
+                fragment,
                 cullFace: null,
                 uniforms: {
                     uHit: {value: 0},
@@ -65,9 +99,9 @@
             function updateHitUniform({mesh}) {
                 program.uniforms.uHit.value = mesh.isHit ? 1 : 0;
             }
-            plane.onBeforeRender = updateHitUniform;
-            sphere.onBeforeRender = updateHitUniform;
-            cube.onBeforeRender = updateHitUniform;
+            plane.onBeforeRender(updateHitUniform);
+            sphere.onBeforeRender(updateHitUniform);
+            cube.onBeforeRender(updateHitUniform);
 
             requestAnimationFrame(update);
             function update() {
@@ -90,6 +124,7 @@
             sphere.geometry.raycast = 'sphere';
 
             document.addEventListener('mousemove', move, false);
+            document.addEventListener('touchmove', move, false);
             function move(e) {
                 mouse.set(
                     2.0 * (e.x / renderer.width) - 1.0,

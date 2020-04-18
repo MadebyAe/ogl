@@ -1,10 +1,7 @@
-// TODO: facilitate Compressed Textures
-// TODO: cube map
 // TODO: delete texture
-// TODO: should I support anisotropy? Maybe a way to extend the update easily
-// TODO: check is ArrayBuffer.isView is best way to check for Typed Arrays?
-// TODO: use texSubImage2D for updates
+// TODO: use texSubImage2D for updates (video or when loaded)
 // TODO: need? encoding = linearEncoding
+// TODO: support non-compressed mipmaps uploads
 
 const emptyPixel = new Uint8Array(4);
 
@@ -12,27 +9,31 @@ function isPowerOf2(value) {
     return (value & (value - 1)) === 0;
 }
 
-let ID = 0;
+let ID = 1;
 
 export class Texture {
-    constructor(gl, {
-        image,
-        target = gl.TEXTURE_2D,
-        type = gl.UNSIGNED_BYTE,
-        format = gl.RGBA,
-        internalFormat = format,
-        wrapS = gl.CLAMP_TO_EDGE,
-        wrapT = gl.CLAMP_TO_EDGE,
-        generateMipmaps = true,
-        minFilter = generateMipmaps ? gl.NEAREST_MIPMAP_LINEAR : gl.LINEAR,
-        magFilter = gl.LINEAR,
-        premultiplyAlpha = false,
-        unpackAlignment = 4,
-        flipY = true,
-        level = 0,
-        width, // used for RenderTargets or Data Textures
-        height = width,
-    } = {}) {
+    constructor(
+        gl,
+        {
+            image,
+            target = gl.TEXTURE_2D,
+            type = gl.UNSIGNED_BYTE,
+            format = gl.RGBA,
+            internalFormat = format,
+            wrapS = gl.CLAMP_TO_EDGE,
+            wrapT = gl.CLAMP_TO_EDGE,
+            generateMipmaps = true,
+            minFilter = generateMipmaps ? gl.NEAREST_MIPMAP_LINEAR : gl.LINEAR,
+            magFilter = gl.LINEAR,
+            premultiplyAlpha = false,
+            unpackAlignment = 4,
+            flipY = target == gl.TEXTURE_2D ? true : false,
+            anisotropy = 0,
+            level = 0,
+            width, // used for RenderTargets or Data Textures
+            height = width,
+        } = {}
+    ) {
         this.gl = gl;
         this.id = ID++;
 
@@ -49,6 +50,7 @@ export class Texture {
         this.premultiplyAlpha = premultiplyAlpha;
         this.unpackAlignment = unpackAlignment;
         this.flipY = flipY;
+        this.anisotropy = Math.min(anisotropy, this.gl.renderer.parameters.maxAnisotropy);
         this.level = level;
         this.width = width;
         this.height = height;
@@ -67,10 +69,10 @@ export class Texture {
         this.state.magFilter = this.gl.LINEAR;
         this.state.wrapS = this.gl.REPEAT;
         this.state.wrapT = this.gl.REPEAT;
+        this.state.anisotropy = 0;
     }
 
     bind() {
-
         // Already bound to active texture unit
         if (this.glState.textureUnits[this.glState.activeTextureUnit] === this.id) return;
         this.gl.bindTexture(this.target, this.texture);
@@ -82,7 +84,6 @@ export class Texture {
 
         // Make sure that texture is bound to its texture unit
         if (needsUpdate || this.glState.textureUnits[textureUnit] !== this.id) {
-
             // set active texture unit to perform texture functions
             this.gl.renderer.activeTexture(textureUnit);
             this.bind();
@@ -126,43 +127,55 @@ export class Texture {
             this.state.wrapT = this.wrapT;
         }
 
-        if (this.image) {
+        if (this.anisotropy && this.anisotropy !== this.state.anisotropy) {
+            this.gl.texParameterf(
+                this.target,
+                this.gl.renderer.getExtension('EXT_texture_filter_anisotropic').TEXTURE_MAX_ANISOTROPY_EXT,
+                this.anisotropy
+            );
+            this.state.anisotropy = this.anisotropy;
+        }
 
+        if (this.image) {
             if (this.image.width) {
                 this.width = this.image.width;
                 this.height = this.image.height;
             }
 
-            // TODO: all sides if cubemap
-            // gl.TEXTURE_CUBE_MAP_POSITIVE_X
-            
-            // TODO: check is ArrayBuffer.isView is best way to check for Typed Arrays?
-            if (this.gl.renderer.isWebgl2 || ArrayBuffer.isView(this.image)) {
-                this.gl.texImage2D(this.target, this.level, this.internalFormat, this.width, this.height, 0 /* border */, this.format, this.type, this.image);
+            if (this.target === this.gl.TEXTURE_CUBE_MAP) {
+                // For cube maps
+                for (let i = 0; i < 6; i++) {
+                    this.gl.texImage2D(
+                        this.gl.TEXTURE_CUBE_MAP_POSITIVE_X + i,
+                        this.level,
+                        this.internalFormat,
+                        this.format,
+                        this.type,
+                        this.image[i]
+                    );
+                }
+            } else if (ArrayBuffer.isView(this.image)) {
+                // Data texture
+                this.gl.texImage2D(this.target, this.level, this.internalFormat, this.width, this.height, 0, this.format, this.type, this.image);
+            } else if (this.image.isCompressedTexture) {
+                // Compressed texture
+                for (let level = 0; level < this.image.length; level++) {
+                    this.gl.compressedTexImage2D(
+                        this.target,
+                        level,
+                        this.internalFormat,
+                        this.image[level].width,
+                        this.image[level].height,
+                        0,
+                        this.image[level].data
+                    );
+                }
             } else {
+                // Regular texture
                 this.gl.texImage2D(this.target, this.level, this.internalFormat, this.format, this.type, this.image);
             }
 
-            // TODO: support everything
-            // WebGL1:
-            // gl.texImage2D(target, level, internalformat, width, height, border, format, type, ArrayBufferView? pixels);
-            // gl.texImage2D(target, level, internalformat, format, type, ImageData? pixels);
-            // gl.texImage2D(target, level, internalformat, format, type, HTMLImageElement? pixels);
-            // gl.texImage2D(target, level, internalformat, format, type, HTMLCanvasElement? pixels);
-            // gl.texImage2D(target, level, internalformat, format, type, HTMLVideoElement? pixels);
-            // gl.texImage2D(target, level, internalformat, format, type, ImageBitmap? pixels);
-
-            // WebGL2:
-            // gl.texImage2D(target, level, internalformat, width, height, border, format, type, GLintptr offset);
-            // gl.texImage2D(target, level, internalformat, width, height, border, format, type, HTMLCanvasElement source);
-            // gl.texImage2D(target, level, internalformat, width, height, border, format, type, HTMLImageElement source);
-            // gl.texImage2D(target, level, internalformat, width, height, border, format, type, HTMLVideoElement source);
-            // gl.texImage2D(target, level, internalformat, width, height, border, format, type, ImageBitmap source);
-            // gl.texImage2D(target, level, internalformat, width, height, border, format, type, ImageData source);
-            // gl.texImage2D(target, level, internalformat, width, height, border, format, type, ArrayBufferView srcData, srcOffset);
-
             if (this.generateMipmaps) {
-
                 // For WebGL1, if not a power of 2, turn off mips, set wrapping to clamp to edge and minFilter to linear
                 if (!this.gl.renderer.isWebgl2 && (!isPowerOf2(this.image.width) || !isPowerOf2(this.image.height))) {
                     this.generateMipmaps = false;
@@ -172,21 +185,33 @@ export class Texture {
                     this.gl.generateMipmap(this.target);
                 }
             }
+
+            // Callback for when data is pushed to GPU
+            this.onUpdate && this.onUpdate();
         } else {
-
-            if (this.width) {
-
+            if (this.target === this.gl.TEXTURE_CUBE_MAP) {
+                // Upload empty pixel for each side while no image to avoid errors while image or video loading
+                for (let i = 0; i < 6; i++) {
+                    this.gl.texImage2D(
+                        this.gl.TEXTURE_CUBE_MAP_POSITIVE_X + i,
+                        0,
+                        this.gl.RGBA,
+                        1,
+                        1,
+                        0,
+                        this.gl.RGBA,
+                        this.gl.UNSIGNED_BYTE,
+                        emptyPixel
+                    );
+                }
+            } else if (this.width) {
                 // image intentionally left null for RenderTarget
                 this.gl.texImage2D(this.target, this.level, this.internalFormat, this.width, this.height, 0, this.format, this.type, null);
             } else {
-
                 // Upload empty pixel if no image to avoid errors while image or video loading
                 this.gl.texImage2D(this.target, 0, this.gl.RGBA, 1, 1, 0, this.gl.RGBA, this.gl.UNSIGNED_BYTE, emptyPixel);
             }
-
         }
         this.store.image = this.image;
-
-        this.onUpdate && this.onUpdate();
     }
 }
